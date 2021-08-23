@@ -1,0 +1,5 @@
+packages:
+  ./
+
+package typical
+  tests: True
