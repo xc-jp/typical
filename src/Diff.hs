@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -13,6 +14,7 @@
 module Diff where
 
 import Data.Monoid (Sum)
+import Data.Type.Equality (type (:~:) (Refl))
 
 -- type Diff a b = Diff' a b (Tangent a) (Tangent b)
 
@@ -136,6 +138,8 @@ data Tangent a ta where
   TanInt :: Tangent Int ()
   TanBool :: Tangent Bool ()
 
+deriving instance Show (Tangent a ta)
+
 monoidTangent :: Tangent a ta -> (Monoid ta => r) -> r
 monoidTangent TanFloat r = r
 monoidTangent (TanDiff x) r = monoidTangent x r
@@ -186,6 +190,62 @@ curryD (D (x :: Tangent x tx) f) =
           where
             reassoc m (c, n) = m (c, \tc -> let (tx, (ta, tb)) = n tc in ((tx, ta), tb))
 
+uncurry :: (a -> (b -> c)) -> (a, b) -> c
+uncurry f (a, b) = f a b
+
+uncurryD :: (a :-> (b :-> c)) -> (a, b) :-> c
+uncurryD (D _ f) = D TanUnit $ \(a, b) (TanTuple tta ttb) k ->
+  let kf = f a tta
+   in kf $ \ttb' (D y g, f') ->
+        let kg = g b ttb
+         in kg $ \ttc' (c, g') ->
+              k
+                ttc'
+                ( c,
+                  \tc ->
+                    case equalTangents ttb' y of
+                      Just Refl ->
+                        let (ty, tb) = g' tc
+                            (_, ta) = f' ty
+                         in ((), (ta, tb))
+                      Nothing -> error $ "Internal error: " <> show y <> " does not match passed " <> show ttb'
+                )
+
+-- It is very unfortunate this did not just work out
+applyD :: (a :-> b, a) :-> b
+applyD = D TanUnit $ \(D x f, a) (TanTuple (TanDiff ttf) tta) k ->
+  case equalTangents x ttf of
+    Just Refl ->
+      let kf = f a tta
+       in kf $ \ttb (b, f') ->
+            k ttb $
+              tuple b $ \tb ->
+                ((), f' tb)
+    Nothing -> error $ "Internal error: " <> show x <> " does not match passed " <> show ttf
+
+equalTangents :: Tangent x tx -> Tangent y ty -> Maybe (tx :~: ty)
+equalTangents TanFloat TanFloat = Just Refl
+equalTangents TanFloat _ = Nothing
+equalTangents (TanDiff x) y = equalTangents x y
+equalTangents x (TanDiff y) = equalTangents x y
+equalTangents (TanTuple a b) (TanTuple c d) = do
+  Refl <- equalTangents a c
+  Refl <- equalTangents b d
+  pure Refl
+equalTangents (TanTuple _ _) _ = Nothing
+equalTangents x y = do
+  Refl <- unitTangent x
+  Refl <- unitTangent y
+  pure Refl
+  where
+    unitTangent :: Tangent a ta -> Maybe (ta :~: ())
+    unitTangent TanFloat = Nothing
+    unitTangent (TanTuple _ _) = Nothing
+    unitTangent (TanDiff a) = unitTangent a
+    unitTangent TanUnit = Just Refl
+    unitTangent TanBool = Just Refl
+    unitTangent TanInt = Just Refl
+
 idD :: a :-> a
 idD = D TanUnit $ \a tta k -> k tta (a, tuple ())
 
@@ -217,84 +277,27 @@ parallelD (D ttx f) (D tty g) =
                     (xg, tc) = g' td
                  in ((xf, xg), (ta, tc))
 
-{-
-k' (
- in ( c,
-      ttc,
-      \tc ->
-        let (tx, (ta, tb)) = f' tc
-         in ((tx, ta), tb)
-    )
-    -}
-
-{-
-idD :: Tangent a ta -> a :-> a
-idD tta =
-  let f' = ((),)
-      f = (,f')
-   in D TanUnit tta tta f
-   -}
-
 tuple :: a -> b -> (a, b)
 tuple a b = (a, b)
 
-{-
-sequenceD ::
-
--}
-{-
-let (c, f') = f (a, b)
- in ( c,
-      \tc ->
-        let (tx, (ta, tb)) = f' tc
-         in ((tx, ta), tb)
-    )
-    -}
-
-{-
-new_f tta a = (D' (TanTuple x tta) g, id)
-  where
-    g ttb h = h $ \b ->
-      let (c, f') = f (a, b)
-       in ( c,
-            \tc ->
-              let (tx, (ta, tb)) = f' tc
-               in ((tx, ta), tb)
-          )
-  -}
-
-{-
--- | Unique and known tangent (there is none for a :-> b)
 vjp' ::
   a :-> b ->
+  Tangent a ta ->
   a ->
-  ( forall ta tb.
-    Tangent a ta ->
-    Tangent b tb ->
-    (tb -> ta) ->
+  ( forall r.
+    ( forall tb. Tangent b tb -> (tb -> ta) -> r
+    ) ->
     r
-  ) ->
-  r
-vjp' (D _ ta tb f) x g =
-  let (_, f') = f x
-   in g ta tb (snd . f')
-  -}
+  )
+vjp' (D _ f) tta x g =
+  let k = f x tta
+   in k $ \ttb (_, f') ->
+        g ttb $ \tb -> snd $ f' tb
 
-{-
 vjp :: (KnownTangent a, KnownTangent b) => (a :-> b) -> a -> Tan b -> Tan a
-vjp d a = vjp' d a $ \ta tb g -> tangent ta $ tangent tb g
--}
+vjp d x = vjp' d knownTangent x $ \ttb g -> tangent ttb g
 
 -- id_a where a is determined by the Tangent witness
-{-
-idD :: Tangent a ta -> a :-> a
-idD tta = D TanUnit tta tta (\a -> (a, \ta -> ((), ta))
-
-applyD :: (a :-> b, a) :-> b
-applyD = D $ \(D f, x) ->
-  let (b, f') = f x
-   in (b, \db -> ([(x, db)], f' db))
-   -}
 
 {-
 
