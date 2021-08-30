@@ -40,6 +40,11 @@ deriving instance Show (Tan ta)
 data a :-> b where
   D :: Tan tx -> Arr tx a b -> a :-> b
 
+-- | Valid values (points) with their respective tangent types We require all
+-- tangents to be additive monoids. Without this constraint the backpropagation
+-- doesn't make sense. However, this makes it unclear what to do with types
+-- like Tensor Float. If we know the exact dimensions then there's a monoid for
+-- Tensor dims Float, but otherwise mempty is not defined.
 data Point a ta where
   Arrow :: Tan tx -> Arr tx a b -> Point (a :-> b) tx
   PointFloat :: Sum Float -> Point (Sum Float) (Sum Float)
@@ -119,6 +124,7 @@ instance Monoid (List '[]) where
 instance (Monoid t, Monoid (List ts)) => Monoid (List (t ': ts)) where
   mempty = Cons mempty mempty
 
+--- Combinator library for differentiable arrows a :-> b
 idD :: a :-> a
 idD = D TanUnit $ \p k -> k p ((),)
 
@@ -126,17 +132,6 @@ constD :: Point b tb -> (a :-> b)
 constD b = D TanUnit $ \pa k ->
   monoidTangent pa $
     k b (const ((), mempty))
-
-atD :: Index xs x -> List xs :-> x
-atD i = D TanUnit $ \xs k -> at i xs $ \j p -> k p (\t -> ((), backpropAt j xs t))
-
-at :: Index xs x -> Point (List xs) tl -> (forall ts t. (tl ~ List ts) => Index ts t -> Point x t -> r) -> r
-at IZ (PointCons t _) k = k IZ t
-at (IS i) (PointCons _ xs) k = at i xs $ \j t -> k (IS j) t
-
-backpropAt :: Index ts t -> Point (List xs) (List ts) -> t -> List ts
-backpropAt IZ (PointCons _ tail') t = monoidTangent tail' $ Cons t mempty
-backpropAt (IS i) (PointCons head' ts) t = monoidTangent head' $ Cons mempty (backpropAt i ts t)
 
 sequenceD ::
   (a :-> b) ->
@@ -164,6 +159,12 @@ parallelD (D ttx f) (D tty g) =
                   (xg, tc) = g' td
                in ((xf, xg), (ta, tc))
 
+fanOutD :: a :-> b -> a :-> c -> a :-> (b, c)
+fanOutD f g = sequenceD dupD (parallelD f g)
+
+-- diff :: Ctx a -> Lam b -> a :-> b
+-- diff ctx (App f x) = sequenceD (fanOutD (diff ctx f) (diff ctx x)) applyD
+
 fstD :: (a, b) :-> a
 fstD = D TanUnit $ \(PointTuple pa pb) k -> monoidTangent pb $ k pa (\ta -> ((), (ta, mempty)))
 
@@ -179,7 +180,7 @@ curryD ::
   a :-> (b :-> c)
 curryD (D (x :: Tan tx) f) = D x h
   where
-    -- Arr tx a (b :-> c)
+    -- Arr tx a (b :-> c) expanded
     -- But I need ta in scope for g to have a type signature
     h ::
       forall ta.
@@ -200,21 +201,35 @@ curryD (D (x :: Tan tx) f) = D x h
                    in ((tx, ta), tb)
 
 uncurryD :: (a :-> (b :-> c)) -> (a, b) :-> c
-uncurryD (D _ f) = D TanUnit $ \(PointTuple pa pb) k ->
+uncurryD (D x f) = D x $ \(PointTuple pa pb) k ->
   let kf = f pa
    in kf $ \(Arrow _ g) f' ->
         let kg = g pb
          in kg $ \pc g' ->
               k pc $ \tc ->
+                -- the tangent of (b :-> c) is ty, which is passed to f'
                 let (ty, tb) = g' tc
-                    (_, ta) = f' ty
-                 in ((), (ta, tb))
+                    (tx, ta) = f' ty
+                 in (tx, (ta, tb))
 
 applyD :: (a :-> b, a) :-> b
 applyD = D TanUnit $ \(PointTuple (Arrow _ f) pa) k ->
   let kf = f pa
    in kf $ \b f' ->
         k b (\tc -> ((), f' tc))
+
+atD :: Index xs x -> List xs :-> x
+atD i = D TanUnit $ \xs k -> at i xs $ \j p -> k p (\t -> ((), backpropAt j xs t))
+
+at :: Index xs x -> Point (List xs) tl -> (forall ts t. (tl ~ List ts) => Index ts t -> Point x t -> r) -> r
+at IZ (PointCons t _) k = k IZ t
+at (IS i) (PointCons _ xs) k = at i xs $ \j t -> k (IS j) t
+
+backpropAt :: Index ts t -> Point (List xs) (List ts) -> t -> List ts
+backpropAt IZ (PointCons _ tail') t = monoidTangent tail' $ Cons t mempty
+backpropAt (IS i) (PointCons head' ts) t = monoidTangent head' $ Cons mempty (backpropAt i ts t)
+
+--- End of combinators
 
 -- | Simplify construction of primitive functions
 class KnownPoint a where
@@ -247,6 +262,8 @@ instance (KnownPoint a, KnownPoint b) => KnownPoint (a, b) where
   knownPoint (a, b) = PointTuple (knownPoint a) (knownPoint b)
   uniquePoint (PointTuple a b) r = uniquePoint a $ uniquePoint b r
 
+-- | Lift a function (a -> (b, Tangent b -> Tangent a)) into a differentiable
+-- function a :-> b given that we know what the tangents for a and b are.
 prim :: forall a b. (KnownPoint a, KnownPoint b) => (a -> (b, Tangent b -> Tangent a)) -> a :-> b
 prim f = D TanUnit $ \pa k ->
   uniquePoint pa $
