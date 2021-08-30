@@ -48,6 +48,7 @@ data a :-> b where
 data Point a ta where
   Arrow :: Tan tx -> Arr tx a b -> Point (a :-> b) tx
   PointFloat :: Sum Float -> Point (Sum Float) (Sum Float)
+  -- PointTensorFloat :: Tensor Float -> Point (Tensor Float) (Tensor Float)
   PointTuple :: Point a ta -> Point b tb -> Point (a, b) (ta, tb)
   PointUnit :: Point () ()
   PointInt :: Int -> Point Int ()
@@ -126,7 +127,7 @@ instance (Monoid t, Monoid (List ts)) => Monoid (List (t ': ts)) where
 
 --- Combinator library for differentiable arrows a :-> b
 idD :: a :-> a
-idD = D TanUnit $ \p k -> k p ((),)
+idD = D TanUnit $ \a k -> k a ((),)
 
 constD :: Point b tb -> (a :-> b)
 constD b = D TanUnit $ \pa k ->
