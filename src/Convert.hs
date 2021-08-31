@@ -5,8 +5,8 @@
 
 module Convert where
 
-import Data.Void (Void, absurd)
-import Prettyprinter (Doc, Pretty (..), hsep, nest, parens, viaShow, vsep)
+import Data.Void (Void)
+import Prettyprinter (Doc, Pretty (..), angles, comma, hsep, nest, parens, viaShow, vsep)
 
 data Prim = Fst | Snd | Add | Mul
   deriving (Show)
@@ -103,7 +103,7 @@ instance Show v => Pretty (Precedence (Exp v)) where
         nest 2 $ vsep [pretty "λ" <> pretty p, pretty (Precedence 0 body)]
   pretty (Precedence _ (Var v)) = viaShow v
   pretty (Precedence d (App f x)) = parens' 10 d $ hsep [pretty (Precedence 11 f), pretty (Precedence 11 x)]
-  pretty (Precedence _ (Tuple f x)) = pretty (Precedence 0 f, Precedence 0 x)
+  pretty (Precedence _ (Tuple f x)) = angles $ hsep [pretty (Precedence 0 f) <> comma, pretty $ Precedence 0 x]
   pretty (Precedence _ Unit) = pretty "Unit"
   pretty (Precedence _ (Const x)) = pretty x
   pretty (Precedence d (Zero x)) = parens' 10 d $ hsep [pretty "zero", pretty (Precedence 11 x)]
@@ -137,19 +137,87 @@ instance Show Value where
 {-
 >>> pretty (convert IgnoreCase (Primitive Mul) :: Exp Void)
 λ
-  ( Mul Left ()
-  , λ
-    ( Unit
-    , ( Mul (Snd Right (Left ()), Left ())
-    , Mul (Fst Right (Left ()), Left ()) ) ) )
+  (λ
+    (λ
+      <Fst Left (), λ
+        (λ
+          (λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+      (λ
+        <Left (), λ
+          Left ()>) (λ
+        (λ(x, x)
+          <Right (Left ()), λ
+            (λ(x, (x, x))
+              <<Left (Right ()), Left (Left (Right ()))>, Left (Left (Left ()))>) (Right (Left (Left ())) Left ())>) ((λ
+          (λ
+            (λ
+              <Fst Left (), λ
+                (λ
+                  (λ
+                    <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+              <Mul Left (), λ
+                <Unit, <Mul <Snd Right (Left ()), Left ()>, Mul <Fst Right (Left ()), Left ()>>>>) (Fst Left ()))) ((λ
+            <Snd Left (), λ
+              <Unit, <zero (Fst Right (Left ())), Left ()>>>) Left ())) <Right (Left ()), Left ()>))) (Fst Left ()))) ((λ
+    <Unit, λ
+      <Unit, zero Right (Left ())>>) Left ())
 
 >>> pretty (convert IgnoreCase (Primitive Add) :: Exp Void)
 λ
-  (Add Left (), λ (Unit, (Left (), Left ())))
+  (λ
+    (λ
+      <Fst Left (), λ
+        (λ
+          (λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+      (λ
+        <Left (), λ
+          Left ()>) (λ
+        (λ(x, x)
+          <Right (Left ()), λ
+            (λ(x, (x, x))
+              <<Left (Right ()), Left (Left (Right ()))>, Left (Left (Left ()))>) (Right (Left (Left ())) Left ())>) ((λ
+          (λ
+            (λ
+              <Fst Left (), λ
+                (λ
+                  (λ
+                    <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+              <Add Left (), λ
+                <Unit, <Left (), Left ()>>>) (Fst Left ()))) ((λ
+            <Snd Left (), λ
+              <Unit, <zero (Fst Right (Left ())), Left ()>>>) Left ())) <Right (Left ()), Left ()>))) (Fst Left ()))) ((λ
+    <Unit, λ
+      <Unit, zero Right (Left ())>>) Left ())
 
 >>> pretty (convert IgnoreCase (Primitive Fst) :: Exp Void)
 λ
-  (Fst Left (), λ (Unit, (Left (), zero (Snd Right (Left ())))))
+  (λ
+    (λ
+      <Fst Left (), λ
+        (λ
+          (λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+      (λ
+        <Left (), λ
+          Left ()>) (λ
+        (λ(x, x)
+          <Right (Left ()), λ
+            (λ(x, (x, x))
+              <<Left (Right ()), Left (Left (Right ()))>, Left (Left (Left ()))>) (Right (Left (Left ())) Left ())>) ((λ
+          (λ
+            (λ
+              <Fst Left (), λ
+                (λ
+                  (λ
+                    <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+              <Fst Left (), λ
+                <Unit, <Left (), zero (Snd Right (Left ()))>>>) (Fst Left ()))) ((λ
+            <Snd Left (), λ
+              <Unit, <zero (Fst Right (Left ())), Left ()>>>) Left ())) <Right (Left ()), Left ()>))) (Fst Left ()))) ((λ
+    <Unit, λ
+      <Unit, zero Right (Left ())>>) Left ())
 
 >>> pretty (App (Lam (Var (Left ()))) (Const 3) :: Exp Void)
 (λ
@@ -165,13 +233,11 @@ data Arrow
   | Parallel Arrow Arrow
   | Curry Arrow
   | Uncurry Arrow
-  | Apply
   | DiffArrow Type Arrow
   | ConstArrow Float
   | UnitArrow
   | Duplicate
   | PrimArrow Prim
-  | NoDiff (Exp Void)
   deriving (Show)
 
 instance Pretty (Precedence Arrow) where
@@ -181,12 +247,10 @@ instance Pretty (Precedence Arrow) where
   pretty (Precedence d (Curry f)) = parens' 10 d $ hsep [pretty "curry", pretty (Precedence 11 f)]
   pretty (Precedence d (Uncurry f)) = parens' 10 d $ hsep [pretty "uncurry", pretty (Precedence 11 f)]
   pretty (Precedence d (DiffArrow _ arr)) = pretty (Precedence d arr)
-  pretty (Precedence _ Apply) = pretty "apply"
   pretty (Precedence d (ConstArrow x)) = parens' 10 d $ hsep [pretty "const", pretty x]
-  pretty (Precedence _ UnitArrow) = pretty ()
+  pretty (Precedence d UnitArrow) = parens' 10 d $ hsep [pretty "const", pretty ()]
   pretty (Precedence _ Duplicate) = pretty "dup"
   pretty (Precedence _ (PrimArrow p)) = viaShow p
-  pretty (Precedence d (NoDiff expr)) = pretty (Precedence d expr)
 
 instance Pretty Arrow where
   pretty x = pretty (Precedence 0 x)
@@ -194,84 +258,50 @@ instance Pretty Arrow where
 {-
 >>> pretty $ diffArrow' (PrimArrow Fst)
 λ
-  (Fst Left (), λ (Unit, (Left (), zero (Snd Right (Left ())))))
+  <Fst Left (), λ
+    <Unit, <Left (), zero (Snd Right (Left ()))>>>
 
 >>> pretty $ diffArrow' (PrimArrow Add)
 λ
-  (Add Left (), λ (Unit, (Left (), Left ())))
+  <Add Left (), λ
+    <Unit, <Left (), Left ()>>>
 
 >>> pretty $ diffArrow' (PrimArrow Mul)
 λ
-  ( Mul Left ()
-  , λ
-    ( Unit
-    , ( Mul (Snd Right (Left ()), Left ())
-    , Mul (Fst Right (Left ()), Left ()) ) ) )
+  <Mul Left (), λ
+    <Unit, <Mul <Snd Right (Left ()), Left ()>, Mul <Fst Right (Left ()), Left ()>>>>
 
 >>> pretty $ diffArrow' Duplicate
 λ
-  ((Left (), Left ()), λ (Unit, Add Left ()))
+  <<Left (), Left ()>, λ
+    <Unit, Add Left ()>>
 
 >>> pretty $ diffArrow' UnitArrow
 λ
-  (Unit, λ (Unit, zero Right (Left ())))
+  <Unit, λ
+    <Unit, zero Right (Left ())>>
 
 \a -> ((), \da -> ((), zero a))
 
 >>> pretty $ diffArrow' (Curry Identity)
 λ
   (λ
-    (Left (), λ Left ())) (λ
+    <Left (), λ
+      Left ()>) (λ
     (λ(x, x)
-      ( Right (Left ())
-      , λ
+      <Right (Left ()), λ
         (λ(x, (x, x))
-          ( (Left (Right ()), Left (Left (Right ())))
-          , Left (Left (Left ())) )) (Right (Left (Left ())) Left ()) )) ((λ
-      (Left (), λ (Unit, Left ()))) (Right (Left ()), Left ())))
-
-λa
-  (λb
-    (b, λc c)) (λd
-    (λe
-      ( Fst e
-      , λf
-        (λg
-          ( (Fst g, Fst (Snd g))
-          , Snd (Snd g) )) ((Snd f) f) )) ((λh
-      (h, λi (Unit, i))) (d, e)))
-
->>> pretty $ diffArrow' (Curry (NoDiff (Primitive Add)))
-λ
-  (λ
-    (Left (), λ Left ())) (λ
-    (λ(x, x)
-      ( Right (Left ())
-      , λ
-        (λ(x, (x, x))
-          ( (Left (Right ()), Left (Left (Right ())))
-          , Left (Left (Left ())) )) (Right (Left (Left ())) Left ()) )) (Add ( Right (Left ())
-    , Left () )))
-
-λa (λg (g, λr r))
-    (λb
-      (λ
-        ( Fst Left ()
-        , λ
-          (λ
-            ( (Fst Left (), Fst (Snd Left ()))
-            , Snd (Snd Left ()) )) ((Snd Right (Left ())) Left ()) )
-      ) (Add ( Right (Left ()) , Left () ))
-    )
+          <<Left (Right ()), Left (Left (Right ()))>, Left (Left (Left ()))>) (Right (Left (Left ())) Left ())>) ((λ
+      <Left (), λ
+        <Unit, Left ()>>) <Right (Left ()), Left ()>))
 
 -}
-diffArrow :: Arrow -> Exp o
+diffArrow :: Arrow -> Exp Void
 diffArrow Identity = idD
 diffArrow (Sequence f g) = sequenceD (diffArrow f) (diffArrow g)
 diffArrow (Parallel f g) = parallelD (diffArrow f) (diffArrow g)
 diffArrow (Curry f) = curryD (diffArrow f)
 diffArrow (Uncurry f) = uncurryD (diffArrow f)
-diffArrow Apply = applyD
 diffArrow (DiffArrow t f) = Diff t (diffArrow f)
 diffArrow Duplicate = dupD
 diffArrow (ConstArrow x) = constD (Const x)
@@ -280,7 +310,6 @@ diffArrow (PrimArrow Fst) = fstD
 diffArrow (PrimArrow Snd) = sndD
 diffArrow (PrimArrow Add) = addD
 diffArrow (PrimArrow Mul) = mulD
-diffArrow (NoDiff expr) = Diff TUnit (fmap absurd expr)
 
 diffArrow' :: Arrow -> Exp Void
 diffArrow' = diffArrow
@@ -288,44 +317,60 @@ diffArrow' = diffArrow
 fanOutArrow :: Arrow -> Arrow -> Arrow
 fanOutArrow f g = Sequence Duplicate (Parallel f g)
 
+{-
+>>> pretty $ convertArrow IgnoreCase $ Primitive Add
+const () >>> curry (Snd >>> Add)
+
+>>> pretty $ convertArrow' $ Primitive Add
+Add
+-}
 convertArrow :: Pattern b -> Exp b -> Arrow
 convertArrow ctx (Lam body) = Curry $ convertArrow (TupleCase ctx VarCase) body
 convertArrow ctx (LamCase p body) = Curry $ convertArrow (TupleCase ctx p) body
 convertArrow ctx (Var i) = convertVar ctx i
-convertArrow ctx (App f x) = (convertArrow ctx f `fanOutArrow` convertArrow ctx x) `Sequence` Apply
+convertArrow ctx (App f x) = (convertArrow ctx f `fanOutArrow` convertArrow ctx x) `Sequence` Uncurry Identity
 convertArrow ctx (Tuple a b) = convertArrow ctx a `fanOutArrow` convertArrow ctx b
 convertArrow ctx (Diff x expr) = DiffArrow x (convertArrow ctx expr) -- TODO: is it true that the tangent of the second order is the same as the first order?
-convertArrow _ (Zero _) = error "Cannot differentiate zero (yet?)" -- Zero is a constant, should have zero gradient of the same shape
+convertArrow _ (Zero _) = error "Cannot differentiate Zero, we need to get the type of the expression but we're not evaluating here..."
 convertArrow _ Unit = UnitArrow
 convertArrow _ (Const x) = ConstArrow x
 convertArrow _ (Primitive p) = Sequence UnitArrow (constFun (PrimArrow p))
 
--- constFun :: (b `k` c) -> (a `k` (b :=> c))
+-- constFun :: (b `k` c) -> (a `k` (b -> c))
 constFun :: Arrow -> Arrow
 constFun f = Curry (Sequence (PrimArrow Snd) f)
 
--- unitFun :: (b `k` c) -> (() `k` (b :=> c))
+-- unitFun :: (b `k` c) -> (() `k` (b -> c))
 unitFun :: Arrow -> Arrow
 unitFun = constFun
 
-convert :: Pattern b -> Exp b -> Exp o
+convert :: Pattern b -> Exp b -> Exp Void
 convert ctx = diffArrow . convertArrow ctx
 
 optimizeArrow :: Arrow -> Arrow
 optimizeArrow (Uncurry (Curry f)) = optimizeArrow f
+optimizeArrow (Uncurry (Sequence UnitArrow (Curry (Sequence (PrimArrow Snd) f)))) = optimizeArrow (Sequence (PrimArrow Snd) f)
 optimizeArrow (Uncurry f) = Uncurry (optimizeArrow f)
 optimizeArrow (Curry (Uncurry f)) = optimizeArrow f
 optimizeArrow (Curry f) = Curry $ optimizeArrow f
+optimizeArrow (Sequence (Curry (Parallel f Identity)) (Uncurry Identity)) = f
 optimizeArrow (Sequence Identity f) = optimizeArrow f
 optimizeArrow (Sequence f Identity) = optimizeArrow f
-optimizeArrow (Sequence f g) = Sequence (optimizeArrow f) (optimizeArrow g)
+-- dup >>> const () ⊗ f >>> Snd = f
+optimizeArrow (Sequence Duplicate (Sequence (Parallel UnitArrow f) (PrimArrow Snd))) = optimizeArrow f
+optimizeArrow (Sequence Duplicate (Sequence (Parallel UnitArrow f) (Sequence (PrimArrow Snd) g))) = optimizeArrow $ Sequence f g
+optimizeArrow (Sequence Duplicate (Parallel (PrimArrow Fst) (PrimArrow Snd))) = Identity
 optimizeArrow (Sequence (Parallel f g) (Parallel x y)) = Parallel (optimizeArrow $ Sequence f x) (optimizeArrow $ Sequence g y)
-optimizeArrow (Parallel (PrimArrow Fst) (PrimArrow Snd)) = Identity
+optimizeArrow (Sequence (Sequence f g) h) = optimizeArrow (Sequence f (optimizeArrow $ Sequence g h))
+optimizeArrow (Sequence f g) = Sequence (optimizeArrow f) (optimizeArrow g)
+optimizeArrow (Parallel Identity Identity) = Identity
 optimizeArrow (Parallel f g) = Parallel (optimizeArrow f) (optimizeArrow g)
 optimizeArrow Identity = Identity
-optimizeArrow Apply = Apply
 optimizeArrow (DiffArrow t arr) = DiffArrow t (optimizeArrow arr)
 optimizeArrow (ConstArrow x) = ConstArrow x
+optimizeArrow UnitArrow = UnitArrow
+optimizeArrow Duplicate = Duplicate
+optimizeArrow (PrimArrow p) = PrimArrow p
 
 convertArrow' :: Exp Void -> Arrow
 convertArrow' expr = optimizeArrow $ Sequence f g
@@ -346,88 +391,85 @@ callD f a db =
       (dx, da) = f' db
    in (b, dx, da)
 
+callD' :: Value -> (Value -> (Value, Value -> (Value, Value))) -> (Value, Value, Value)
+callD' a f =
+  let (b, f') = f a
+      (dx, da) = f' (ones (tangent b))
+   in (b, dx, da)
+
+tangent :: Value -> Type
+tangent (Number _) = TFloat
+tangent (Pair (TypeValue t) (Closure _)) = t
+tangent (Pair a b) = TTuple (tangent a) (tangent b)
+tangent UnitValue = TUnit
+tangent (Closure _) = error "No tangent for closure"
+tangent (TypeValue t) = error $ "No tangent for type " <> show t
+
+ones :: Type -> Value
+ones TFloat = Number 1
+ones (TTuple a b) = Pair (ones a) (ones b)
+ones TUnit = UnitValue
+ones (TArr _ _) = Closure $ \v -> ones (tangent v)
+
 {-
 >>> pretty $ convert' (Primitive Add)
 λ
   (λ
     (λ
-      ( Fst Left ()
-      , λ
+      <Fst Left (), λ
         (λ
           (λ
-            ( (Fst Left (), Fst Right (Left ()))
-            , Snd Left () )) ((Snd Right (Right (Right (Right (Left ()))))) (Snd Left ()))) ((Snd Right (Right (Left ()))) Left ()) )) ((λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
       (λ
         (λ
-          ( Fst Left ()
-          , λ
+          <Fst Left (), λ
             (λ
               (λ
-                ( Fst Left ()
-                , ( Snd Left ()
-                , Snd Right (Left ()) ) )) ((Snd Right (Right (Right (Left ())))) (Fst Left ()))) ((Snd Right (Left ())) Left ()) )) ((Fst Left ()) (Snd Right (Left ())))) ((λ
+                <Fst Left (), <Snd Left (), Snd Right (Left ())>>) ((Snd Right (Right (Right (Left ())))) (Fst Left ()))) ((Snd Right (Left ())) Left ())>) ((Fst Left ()) (Snd Right (Left ())))) ((λ
         (λ
           (λ
-            ( Fst Left ()
-            , λ
+            <Fst Left (), λ
               (λ
                 (λ
-                  ( (Fst Left (), Fst Right (Left ()))
-                  , Snd Left () )) ((Snd Right (Right (Right (Right (Left ()))))) (Snd Left ()))) ((Snd Right (Right (Left ()))) Left ()) )) ((λ
+                  <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
             (λ
-              (Left (), λ Left ())) (λ
+              <Left (), λ
+                Left ()>) (λ
               (λ(x, x)
-                ( Right (Left ())
-                , λ
+                <Right (Left ()), λ
                   (λ(x, (x, x))
-                    ( (Left (Right ()), Left (Left (Right ())))
-                    , Left (Left (Left ())) )) (Right (Left (Left ())) Left ()) )) ((λ
+                    <<Left (Right ()), Left (Left (Right ()))>, Left (Left (Left ()))>) (Right (Left (Left ())) Left ())>) ((λ
                 (λ
                   (λ
-                    ( Fst Left ()
-                    , λ
+                    <Fst Left (), λ
                       (λ
                         (λ
-                          ( (Fst Left (), Fst Right (Left ()))
-                          , Snd Left () )) ((Snd Right (Right (Right (Right (Left ()))))) (Snd Left ()))) ((Snd Right (Right (Left ()))) Left ()) )) ((λ
-                    ( Add Left ()
-                    , λ
-                      (Unit, (Left (), Left ())) )) (Fst Left ()))) ((λ
-                  ( Snd Left ()
-                  , λ
-                    ( Unit
-                    , ( zero (Fst Right (Left ()))
-                    , Left () ) ) )) Left ())) ( Right (Left ())
-              , Left () )))) (Fst Left ()))) ((λ
-          ( Unit
-          , λ
-            ( Unit
-            , zero Right (Left ()) ) )) Left ())) (Fst Left ()))) (Fst Left ()))) ((λ
+                          <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+                    <Add Left (), λ
+                      <Unit, <Left (), Left ()>>>) (Fst Left ()))) ((λ
+                  <Snd Left (), λ
+                    <Unit, <zero (Fst Right (Left ())), Left ()>>>) Left ())) <Right (Left ()), Left ()>))) (Fst Left ()))) ((λ
+          <Unit, λ
+            <Unit, zero Right (Left ())>>) Left ())) (Fst Left ()))) (Fst Left ()))) ((λ
     (λ
       (λ
-        ( Fst Left ()
-        , λ
+        <Fst Left (), λ
           (λ
             (λ
-              ( (Fst Left (), Fst Right (Left ()))
-              , Snd Left () )) ((Snd Right (Right (Right (Right (Left ()))))) (Snd Left ()))) ((Snd Right (Right (Left ()))) Left ()) )) ((λ
+              <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
         (λ
-          (λ
-            ( (Fst Right (Left ()), Fst Left ())
-            , λ
-              (λ
-                (λ
-                  ( (Fst Right (Left ()), Fst Left ())
-                  , ( Snd Right (Left ())
-                  , Snd Left () ) )) (Right (Right (Left ())) (Snd Right (Left ())))) (Right (Right (Left ())) (Fst Left ())) )) ((λ
-            (Left (), λ (Unit, Left ()))) (Snd Left ()))) ((λ
-          ( Unit
-          , λ
-            (Unit, zero Right (Left ())) )) (Fst Left ()))) (Fst Left ()))) ((λ
-      ((Left (), Left ()), λ (Unit, Add Left ()))) Left ())) Left ())
+          <<Fst (Fst Left ()), Fst (Snd Left ())>, λ
+            (λ
+              <<Fst (Fst Left ()), Fst (Snd Left ())>, <Snd (Fst Left ()), Snd (Snd Left ())>>) <(Snd (Fst Right (Left ()))) (Fst Left ()), (Snd (Snd Right (Left ()))) (Snd Left ())>>) <(λ
+          <Unit, λ
+            <Unit, zero Right (Left ())>>) (Fst Left ()), (λ
+          <Left (), λ
+            <Unit, Left ()>>) (Snd Left ())>) (Fst Left ()))) ((λ
+      <<Left (), Left ()>, λ
+        <Unit, Add Left ()>>) Left ())) Left ())
 
 >>> callD (evalD (convert' (Primitive Add))) (Pair (Number 2) (Number 4)) (Number 5)
-Cannot call non-function
+((2.0,4.0),((Unit,(Unit,Unit)),(Unit,(Unit,Unit))),(5.0,5.0))
 
 >>> pretty $ convertArrow IgnoreCase $ Const 2
 const 2.0
@@ -436,22 +478,22 @@ const 2.0
 curry (const 2.0)
 
 >>> pretty $ convertArrow' (Lam (Const 3))
-dup >>> () ⊗ id >>> uncurry (curry (const 3.0))
+dup >>> const () ⊗ id >>> uncurry (curry (const 3.0))
 
 >>> callD (evalD (convert' (Lam (Const 2)))) (Number 4) (Number 5)
-Cannot get snd of non-pair
+(4.0,((Unit,(Unit,Unit)),Unit),0.0)
 
 >>> pretty $ convertArrow IgnoreCase (Tuple (Const 2) (Const 3))
 dup >>> const 2.0 ⊗ const 3.0
 
 >>> pretty $ convertArrow' (Lam $ App (Primitive Add) (Tuple (Const 2) (Const 3)))
-dup >>> () ⊗ id >>> uncurry (curry (dup >>> (() >>> curry (Snd >>> Add)) ⊗ (dup >>> const 2.0 ⊗ const 3.0) >>> apply))
+dup >>> const () ⊗ id >>> uncurry (curry (dup >>> (const () >>> curry (Snd >>> Add)) ⊗ (dup >>> const 2.0 ⊗ const 3.0) >>> uncurry id))
 
 >>> pretty $ convertArrow IgnoreCase (App (Primitive Add) (Tuple (Const 2) (Const 3)))
-dup >>> (() >>> curry (Snd >>> Add)) ⊗ (dup >>> const 2.0 ⊗ const 3.0) >>> apply
+dup >>> (const () >>> curry (Snd >>> Add)) ⊗ (dup >>> const 2.0 ⊗ const 3.0) >>> uncurry id
 
->>> callD (evalD $ convert' (Primitive Add)) (Number 2) (Number 3)
-Cannot get snd of non-pair
+>>> callD (evalD $ convert' (Primitive Add)) (Pair (Number 2) (Number 3)) (Number 3)
+((2.0,3.0),((Unit,(Unit,Unit)),(Unit,(Unit,Unit))),(3.0,3.0))
 
 -}
 evalD :: Exp Void -> (Value -> (Value, Value -> (Value, Value)))
@@ -463,71 +505,70 @@ evalD expr = case eval EmptyContext expr of
           \db ->
             case f' db of
               Pair dx da -> (dx, da)
-              _ -> error "Not a tangent"
+              x -> error $ "Not a tangent: " <> show x
         )
-      _ -> error "Not a diff result"
-  _ -> error "Not a diff function"
+      x -> error $ "Not a diff result: " <> show x
+  x -> error $ "Not a diff function: " <> show x
 
 data Context v where
   EmptyContext :: Context Void
-  Bind :: Value -> Context v -> Context (Either () v)
-  BindPair :: Context a -> Context b -> Context (Either a b)
+  Bind :: Value -> Context ()
+  BindPair :: Context a -> Context b -> Context (Either b a)
 
 eval :: Show v => Context v -> Exp v -> Value
-eval ctx (Lam e) = Closure $ \a -> eval (Bind a ctx) e
+eval ctx (Lam e) = Closure $ \a -> eval (BindPair ctx (Bind a)) e
 eval ctx (LamCase p e) = Closure $ \a ->
   showPattern p $
     let x = patternMatch a p
-     in eval (BindPair x ctx) e
+     in eval (BindPair ctx x) e
   where
     patternMatch :: Value -> Pattern b -> Context b
-    patternMatch = undefined
+    patternMatch v VarCase = Bind v
+    patternMatch _ IgnoreCase = EmptyContext
+    patternMatch (Pair a b) (TupleCase x y) = BindPair (patternMatch a x) (patternMatch b y)
+    patternMatch v (TupleCase _ _) = error $ "Pattern match failed on pair: " <> show v
 eval ctx (Var i) = lookupVar ctx i
   where
     lookupVar :: Context x -> x -> Value
     lookupVar EmptyContext v = case v of
-    lookupVar (Bind a _) (Left ()) = a
-    lookupVar (Bind _ as) (Right v) = lookupVar as v
-    lookupVar (BindPair as _) (Left v) = lookupVar as v
-    lookupVar (BindPair _ bs) (Right v) = lookupVar bs v
+    lookupVar (Bind a) _ = a
+    lookupVar (BindPair as _) (Right v) = lookupVar as v
+    lookupVar (BindPair _ bs) (Left v) = lookupVar bs v
 eval ctx (App f x) =
   case (eval ctx f, eval ctx x) of
     (Closure vf, v) -> vf v
-    _ -> error "Cannot call non-function"
+    v -> error $ "Cannot call non-function " <> show v
 eval ctx (Tuple a b) = Pair (eval ctx a) (eval ctx b)
 eval _ Unit = UnitValue
 eval _ (Const x) = Number x
 eval _ (Primitive Fst) = Closure go
   where
     go (Pair a _) = a
-    go _ = error "Cannot get fst of non-pair"
+    go v = error $ "Cannot get fst of non-pair " <> show v
 eval _ (Primitive Snd) = Closure go
   where
     go (Pair _ b) = b
-    go _ = error "Cannot get snd of non-pair"
+    go v = error $ "Cannot get snd of non-pair" <> show v
 eval _ (Primitive Add) = Closure go
   where
     go (Pair (Number a) (Number b)) = Number $ a + b
     go (Pair UnitValue UnitValue) = UnitValue
-    go x = error $ "Cannot add" <> show x
+    go (Pair (Pair a b) (Pair c d)) = Pair (go (Pair a c)) (go (Pair b d))
+    go x = error $ "Cannot add " <> show x
 eval _ (Primitive Mul) = Closure go
   where
     go (Pair (Number a) (Number b)) = Number $ a * b
     go (Pair UnitValue UnitValue) = UnitValue
-    go _ = error "Cannot multiply"
-eval ctx (Zero expr) =
-  case eval ctx expr of
-    Pair (TypeValue t) (Closure _) -> zeroTangent t
-    Number _ -> Number 0
-    UnitValue -> UnitValue
-    _ -> error $ "No zero for" <> show expr
+    go (Pair (Pair a b) (Pair c d)) = Pair (go (Pair a c)) (go (Pair b d))
+    go x = error $ "Cannot multiply " <> show x
+eval ctx (Zero expr) = zeroTangent (tangent (eval ctx expr))
 eval ctx (Diff t expr) = Pair (TypeValue t) (eval ctx expr)
 
 zeroTangent :: Type -> Value
 zeroTangent TFloat = Number 0
 zeroTangent (TTuple a b) = Pair (zeroTangent a) (zeroTangent b)
-zeroTangent (TArr _ _) = error "No tangent for function"
 zeroTangent TUnit = UnitValue
+zeroTangent (TArr a b) = error $ "No tangent for function: " <> show (pretty a) <> " -> " <> show (pretty b)
 
 -- Treat Context as a heterogeneous list built up from tuples
 -- TODO: Optimize convertVar with a proj primitive
@@ -569,7 +610,58 @@ snd' = App (Primitive Snd)
 
 {-
 >>> pretty $ convertArrow' $ Primitive Add
-dup >>> () ⊗ id >>> uncurry (() >>> curry (Snd >>> Add))
+Add
+
+>>> convertArrow' $ Primitive Add
+PrimArrow Add
+
+>>> callD' (Number 3) (evalD $ diffArrow' Duplicate)
+((3.0,3.0),Unit,2.0)
+
+>>> callD' (Pair (Number 2) (Number 3)) (evalD $ diffArrow' (PrimArrow Mul))
+(6.0,Unit,(3.0,2.0))
+
+>>> pretty $ diffArrow' Duplicate
+λ
+  <<Left (), Left ()>, λ
+    <Unit, Add Left ()>>
+
+>>> pretty $ diffArrow' (Sequence Identity Identity)
+λ
+  (λ
+    (λ
+      <Fst Left (), λ
+        (λ
+          (λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+      <Left (), λ
+        <Unit, Left ()>>) (Fst Left ()))) ((λ
+    <Left (), λ
+      <Unit, Left ()>>) Left ())
+
+>>> pretty $ diffArrow' Identity
+λ
+  <Left (), λ
+    <Unit, Left ()>>
+>>> pretty $ diffArrow' (Sequence Duplicate Identity)
+λ
+  (λ
+    (λ
+      <Fst Left (), λ
+        (λ
+          (λ
+            <<Fst Left (), Fst Right (Left ())>, Snd Left ()>) ((Snd Right (Right (Right (Left ())))) (Snd Left ()))) ((Snd Right (Left ())) Left ())>) ((λ
+      <Left (), λ
+        <Unit, Left ()>>) (Fst Left ()))) ((λ
+    <<Left (), Left ()>, λ
+      <Unit, Add Left ()>>) Left ())
+
+>>> callD' (Number 3) (evalD $ diffArrow' (Sequence Duplicate (Parallel Identity Identity)))
+((3.0,3.0),(Unit,(Unit,Unit)),2.0)
+
+>>> callD' (Number 3) (evalD $ diffArrow' (Sequence Duplicate (Parallel UnitArrow Identity)))
+((Unit,3.0),(Unit,(Unit,Unit)),1.0)
+
 -}
 add' :: Exp a -> Exp a
 add' = App (Primitive Add)
@@ -581,7 +673,7 @@ id' :: Exp a
 id' = Lam (Var (Left ()))
 
 -- (a -> b) -> (b -> c) -> (a -> c)
-sequenceD :: forall a. Exp a -> Exp a -> Exp a
+sequenceD :: Exp a -> Exp a -> Exp a
 sequenceD (Diff tx f) (Diff ty g) = Diff (TTuple tx ty) $ Lam body
   where
     {-
@@ -601,8 +693,8 @@ sequenceD (Diff tx f) (Diff ty g) = Diff (TTuple tx ty) $ Lam body
       let' (App (shift f) a) $
         let' (App (shift $ shift g) b) (Tuple c (Lam pullback))
     c = fst' (Var (Left ()))
-    g' = snd' (Var (Right $ Right (Left ())))
-    f' = snd' (Var (Right $ Right $ Right $ Right (Left ())))
+    g' = snd' (Var (Right (Left ())))
+    f' = snd' (Var (Right $ Right $ Right (Left ())))
     db = snd' (Var (Left ()))
     x = fst' (Var (Left ()))
     y = fst' (Var (Right (Left ())))
@@ -629,34 +721,30 @@ parallelD (Diff tx f) (Diff ty g) = Diff (TTuple tx ty) $ Lam body
   where
     {-
        parallelD f g = \(a,c) ->
-        let (b, f') = f a
-            (d, g') = g c
+        let ((b, f'), (d,g')) = (f a, g c)
         in ((b,d) \(db, dd) ->
-          let (x,da) = f' db
-              (y,dc) = g' dd
+          let ((x,da), (y, dc)) = (f' db, g' dd)
           in ((x,y), (da,dc))
         )
     -}
     a = fst' (Var (Left ()))
     c = snd' (Var (Left ()))
-    b = fst' (Var (Right (Left ())))
-    d = fst' (Var (Left ()))
+    b = fst' $ fst' (Var (Left ()))
+    d = fst' $ snd' (Var (Left ()))
     body =
-      let' (App (shift f) a) $
-        let' (App (shift $ shift g) c) $
-          Tuple (Tuple b d) (Lam pullback)
-    f' = Var $ Right $ Right (Left ())
-    g' = Var $ Right $ Right (Left ())
+      let' (Tuple (App (shift f) a) (App (shift g) c)) $
+        Tuple (Tuple b d) (Lam pullback)
+    f' = snd' $ fst' $ Var $ Right (Left ())
+    g' = snd' $ snd' $ Var $ Right (Left ())
     db = fst' (Var (Left ()))
-    dd = snd' (Var (Right (Left ())))
-    x = fst' (Var (Right (Left ())))
-    da = snd' (Var (Right (Left ())))
-    y = fst' (Var (Left ()))
-    dc = snd' (Var (Left ()))
+    dd = snd' (Var (Left ()))
+    x = fst' $ fst' (Var (Left ()))
+    da = snd' $ fst' (Var (Left ()))
+    y = fst' $ snd' (Var (Left ()))
+    dc = snd' $ snd' (Var (Left ()))
     pullback =
-      let' (App f' db) $
-        let' (App g' dd) $
-          Tuple (Tuple x y) (Tuple da dc)
+      let' (Tuple (App f' db) (App g' dd)) $
+        Tuple (Tuple x y) (Tuple da dc)
 parallelD _ _ = error "Cannot parallel"
 
 -- (a -> b, a) -> b
@@ -690,7 +778,7 @@ reassoc =
 -- (dc -> (dx, (da, db))) (a,b) -> c : Tan c = dc
 -- (dc -> ((dx, da), db) b -> c : Tan (b -> c) = (dx, da)
 -- ((dx, da) -> (dx, da)) (a -> (b -> c))
-curryD :: Exp a -> Exp a
+curryD :: Show a => Exp a -> Exp a
 curryD (Diff tx f) =
   Diff tx $
     Lam $
@@ -744,7 +832,7 @@ curryD (Diff tx f) = Diff tx $ Lam body
     g = let' (App (shift $ shift f) (Tuple a b)) (Tuple c (Lam pullback))
     body = let' (Lam g) (Tuple (Var (Left ())) id')
 -}
-curryD _ = error "No curry"
+curryD expr = error $ "No curry for: " <> show expr
 
 uncurryD :: Exp a -> Exp a
 uncurryD (Diff tx f) = Diff tx $ Lam body
