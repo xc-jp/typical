@@ -37,6 +37,7 @@ data Exp ctx t where
   Lam :: Exp (a ': ctx) b -> Exp ctx (a -> b)
   LamCase :: Pattern bound a -> Exp (bound ++ ctx) b -> Exp ctx (a -> b)
   App :: Exp ctx (a -> b) -> Exp ctx a -> Exp ctx b
+  Unit :: Exp ctx ()
   Constant :: a -> Exp ctx a
   -- TODO: Move these into primitives?
   Tuple :: Exp ctx a -> Exp ctx b -> Exp ctx (a, b)
@@ -183,7 +184,7 @@ data UExp
   | ULit Literal
   | UTuple UExp UExp
 
-data Arrow :: (* -> * -> *) -> * -> * -> * where
+data Arrow :: (Type -> Type -> Type) -> Type -> Type -> Type where
   -- | Category
   Identity :: Arrow p a a
   Sequence :: Arrow p a b -> Arrow p b c -> Arrow p a c
@@ -228,6 +229,42 @@ instance Category (Arrow p) where
   Parallel f g . Parallel x y = Parallel (f . x) (g . y)
   g . f = Sequence f g
 
+data D a b where
+  D ::
+    Typ tx ->
+    Typ ta ->
+    Typ tb ->
+    Exp '[] (a -> (b, tb -> (tx, ta))) ->
+    D a b
+
+letCase :: Pattern xs a -> Exp ctx a -> Exp (xs ++ ctx) b -> Exp ctx b
+letCase p a b = App (LamCase p b) a
+
+diff :: Arrow (,) a b -> Typ a -> Typ b -> D a b
+diff Identity ta tb =
+  D TypUnit ta tb $ Lam $ Tuple (Var IZ) $ Lam $ Tuple Unit (Var IZ)
+
+{-
+diff (Sequence f g) k =
+  diff f $ \(D x df) -> diff g $ \(D y dg) ->
+    k $
+      D (TypPair x y) $
+        Lam $
+          letCase (TupleCase VarCase VarCase) (App (shift df) (Var IZ)) $
+            letCase (TupleCase VarCase VarCase) (App (shift $ shift $ shift dg) (Var IZ)) $
+              Tuple (Var IZ) $
+                Lam $
+                  letCase (TupleCase VarCase VarCase) (App (Var (IS (IS IZ))) (Var IZ)) $
+                    letCase
+                      (TupleCase VarCase VarCase)
+                      (App (Var $ IS $ IS $ IS $ IS $ IS $ IS IZ) (Var (IS IZ)))
+                      $ Tuple (Tuple (Var IZ) (Var $ IS $ IS IZ)) (Var (IS IZ))
+diff (Curry f) k =
+  case diff f of
+    D x df ->
+      D x g
+-}
+
 -- | Apply unit to the
 runArrow :: Arrow (,) () (a -> b) -> Arrow (,) a b
 runArrow g = It `fanOut` Identity >>> Uncurry g
@@ -261,6 +298,11 @@ listNil (LS l) ok = listNil l ok
 swap :: Arrow p (p a b) (p b a)
 swap = Dup >>> Parallel Exr Exl
 
+-- body : c
+-- p :: Pattern a
+-- q :: Pattern b
+-- convert body (Tuple p q) :: (a,b) -> c
+-- Curry $ convert ... :: a -> (b -> c)
 convert :: Exp bound b -> Pattern bound a -> Arrow (,) a b
 convert (Var i) p = convertVar p i
 convert (LamCase q body) p = Curry $ swap >>> convert body (TupleCase q p)
@@ -275,6 +317,7 @@ convert (Construct Nil) _ = Const Nil
 convert (Construct vs) p = fanOutVec $ fmap (`convert` p) vs
 convert (Tuple a b) p = convert a p `fanOut` convert b p
 convert (Constant x) _ = Const x
+convert Unit _ = Const ()
 
 absurdIndex :: Index '[] a -> b
 absurdIndex i = case i of
@@ -347,7 +390,7 @@ substitute :: forall ys a b. Exp ys a -> Exp (a ': ys) b -> Exp ys b
 substitute expr = go LZ
   where
     go :: forall xs c. Length xs -> Exp (xs ++ a ': ys) c -> Exp (xs ++ ys) c
-    go len (Var index) = substituteIndex len index
+    go len (Var i) = substituteIndex len i
     go len (Lam body) = Lam (go (LS len) body)
     go len (LamCase (pat :: Pattern bound x) (body :: Exp (bound ++ (xs ++ a ': ys)) d)) =
       let blen = boundLength pat
@@ -395,7 +438,7 @@ bindVars (ConsCase vs) (Vec (Cons a as)) = Cons' a (bindVars vs (Vec as))
 bindVars (ConsCase vs) (EvalValue (Cons a as)) = Cons' (EvalValue a) (bindVars vs (EvalValue as))
 
 eval :: List Eval ctx -> Exp ctx t -> Eval t
-eval ctx (Var index) = lookupList index ctx
+eval ctx (Var i) = lookupList i ctx
 eval ctx (Lam expr) = EvalFun $ \a -> eval (Cons' a ctx) expr
 eval ctx (LamCase pat expr) = EvalFun $ \a -> eval (concatList (bindVars pat a) ctx) expr
 eval ctx (App f x) = appEval (eval ctx f) (eval ctx x)
@@ -484,13 +527,13 @@ sequenceWeightedVec f g =
     leftRep :: Vec p () -> Vec q () -> Rep (Vec p) -> Rep (Vec (p + q))
     leftRep = go
       where
-        go :: forall x y. Vec x () -> Vec y () -> Rep (Vec x) -> Rep (Vec (x + y))
+        go :: forall w y. Vec w () -> Vec y () -> Rep (Vec w) -> Rep (Vec (w + y))
         go _ _ FZ = FZ
         go (Cons _ xs) ys (FS i) = FS (go xs ys i)
     rightRep :: Vec p () -> Vec q () -> Rep (Vec q) -> Rep (Vec (p + q))
     rightRep = go
       where
-        go :: forall x y. Vec x () -> Vec y () -> Rep (Vec y) -> Rep (Vec (x + y))
+        go :: forall w y. Vec w () -> Vec y () -> Rep (Vec y) -> Rep (Vec (w + y))
         go Nil _ i = i
         go (Cons _ xs) ys i = FS (go xs ys i)
 

@@ -36,6 +36,7 @@ library
     , containers
     , microlens-platform
     , mtl
+    , prettyprinter
     , rebound
 
 executable typical-exe
